@@ -26,11 +26,10 @@ typedef struct
     unsigned value;
     unsigned psp;
     bool     is_high;
-    bool     is_started;
     unsigned high_timer_count;
     unsigned low_timer_count;
-    unsigned high;
-    unsigned low;
+    uint16_t high;
+    uint16_t low;
 } pulsecount_values_t;
 
 typedef struct
@@ -76,7 +75,6 @@ static void pulsecount_isr(unsigned pps)
 
     if (exti->adc_timer != 0xFFFFFFFF)
     {
-        values->is_started = false;
         timer_set_counter(exti->adc_timer, 0);
         timer_enable_counter(exti->adc_timer);
     }
@@ -90,22 +88,14 @@ static void pulsecount_adc_timer_isr(unsigned pps)
 
     timer_clear_flag(exti->adc_timer, TIM_SR_CC1IF);
 
-    unsigned value;
+    uint16_t value = adcs_get_now(exti->adc);
 
-    if (!values->is_started)
-    {
-        adcs_start_read(exti->adc);
-        values->is_started = true;
-    }
-    else if (adcs_async_read_complete(&value))
-    {
-        //Inversed now
-        if (!values->is_high)
-            values->high = value;
-        else
-            values->low = value;
-        timer_disable_counter(exti->adc_timer);
-    }
+    //Inversed now
+    if (!values->is_high)
+        values->high = value;
+    else
+        values->low = value;
+    timer_disable_counter(exti->adc_timer);
 }
 
 

@@ -3,6 +3,7 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/dma.h>
 
 #include "log.h"
 #include "adcs.h"
@@ -11,14 +12,16 @@
 
 static uint8_t adc_channel_array[] = {4,6,7,8,9,10,11,12,13,14,15};
 
+static volatile uint16_t adc_values[ARRAY_SIZE(adc_channel_array)];
+
 typedef struct
 {
-    unsigned max_value;
-    unsigned min_value;
+    uint16_t max_value;
+    uint16_t min_value;
     double   av_value;
-}  __attribute__((packed)) adc_channel_info_t;
+}  adc_channel_info_t;
 
-static adc_channel_info_t adc_channel_info[ARRAY_SIZE(adc_channel_array)] = {{0}};
+static adc_channel_info_t          adc_channel_info[ARRAY_SIZE(adc_channel_array)] = {{0}};
 
 static volatile adc_channel_info_t adc_channel_info_cur[ARRAY_SIZE(adc_channel_array)] = {{0}};
 
@@ -39,18 +42,41 @@ void adcs_init()
                         port_n_pins[n].pins);
     }
 
+//    rcc_periph_clock_enable(RCC_ADCS_ADC);
     rcc_peripheral_enable_clock(&RCC_APB2ENR, RCC_APB2ENR_ADCEN);
+    rcc_periph_clock_enable(RCC_ADCS_DMA);
 
-    adc_power_off(ADC1);
-    adc_set_clk_source(ADC1, ADC_CLKSOURCE_ADC);
-    adc_calibrate(ADC1);
-    adc_set_operation_mode(ADC1, ADC_MODE_SEQUENTIAL);
-    adc_set_continuous_conversion_mode(ADC1);
-    adc_set_right_aligned(ADC1);
-    adc_set_regular_sequence(ADC1, ARRAY_SIZE(adc_channel_array), adc_channel_array);
-    adc_set_sample_time_on_all_channels(ADC1, ADC_SMPTIME_071DOT5);
-    adc_set_resolution(ADC1, ADC_RESOLUTION_12BIT);
-    adc_power_on(ADC1);
+    dma_disable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
+
+    dma_enable_circular_mode(ADCS_DMA, ADCS_DMA_CHANNEL);
+    dma_enable_memory_increment_mode(ADCS_DMA, ADCS_DMA_CHANNEL);
+
+    dma_set_peripheral_size(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_CCR_PSIZE_16BIT);
+    dma_set_memory_size(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_CCR_MSIZE_16BIT);
+
+    dma_set_read_from_peripheral(ADCS_DMA, ADCS_DMA_CHANNEL);
+    dma_set_peripheral_address(ADCS_DMA, ADCS_DMA_CHANNEL, (uint32_t) &ADC_DR(ADCS_ADC));
+
+    dma_set_memory_address(ADCS_DMA, ADCS_DMA_CHANNEL, (uint32_t) &adc_values);
+    dma_set_number_of_data(ADCS_DMA, ADCS_DMA_CHANNEL, ARRAY_SIZE(adc_values));
+
+    dma_enable_transfer_complete_interrupt(ADCS_DMA, ADCS_DMA_CHANNEL);
+    dma_enable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
+
+    adc_power_off(ADCS_ADC);
+    adc_set_clk_source(ADCS_ADC, ADC_CLKSOURCE_ADC);
+    adc_calibrate(ADCS_ADC);
+    adc_set_operation_mode(ADCS_ADC, ADC_MODE_SEQUENTIAL);
+    adc_set_continuous_conversion_mode(ADCS_ADC);
+    adc_set_right_aligned(ADCS_ADC);
+    adc_set_regular_sequence(ADCS_ADC, ARRAY_SIZE(adc_channel_array), adc_channel_array);
+    adc_set_sample_time_on_all_channels(ADCS_ADC, ADC_SMPTIME_071DOT5);
+    adc_set_resolution(ADCS_ADC, ADC_RESOLUTION_12BIT);
+    adc_power_on(ADCS_ADC);
+
+    adc_enable_dma(ADCS_ADC);
+    adc_enable_dma_circular_mode(ADCS_ADC);
+    adc_start_conversion_regular(ADC1);
 }
 
 
@@ -61,10 +87,7 @@ void adcs_do_samples()
     call_count++;
     for(unsigned n = 0; n < ARRAY_SIZE(adc_channel_array); n++)
     {
-        adc_start_conversion_regular(ADC1);
-        while (!(adc_eoc(ADC1)));
-
-        uint32_t adc = adc_read_regular(ADC1);
+        uint16_t adc = adc_values[n];
 
         adc_channel_info_t * channel_info = &adc_channel_info[n];
 
@@ -79,6 +102,12 @@ void adcs_do_samples()
 }
 
 
+void ADCS_DMA_CHANNEL_ISR(void)
+{
+    dma_clear_interrupt_flags(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_IFCR_CGIF1);
+}
+
+
 void adcs_second_boardary()
 {
     if (!do_adcs)
@@ -86,14 +115,15 @@ void adcs_second_boardary()
     for(unsigned n = 0; n < ARRAY_SIZE(adc_channel_array); n++)
     {
         adc_channel_info_t * channel_info = &adc_channel_info[n];
+        unsigned count = call_count;
 
         adc_channel_info_cur[n] = *channel_info;
 
         channel_info->max_value = 0;
-        channel_info->min_value = 0xFFFFFFFF;
+        channel_info->min_value = 0xFFFF;
         channel_info->av_value  = 0;
 
-        adc_channel_info_cur[n].av_value /= call_count;
+        adc_channel_info_cur[n].av_value /= count;
     }
 
     call_count = 0;
@@ -127,34 +157,18 @@ void adcs_get(unsigned   adc,
 }
 
 
+uint16_t adcs_get_now(unsigned adc)
+{
+    if (adc >= ARRAY_SIZE(adc_channel_array))
+        return 0;
+
+    return adc_values[adc];
+}
+
+
 unsigned adcs_get_count()
 {
     return ARRAY_SIZE(adc_channel_array);
-}
-
-
-void     adcs_start_read(unsigned adc)
-{
-    if (adc >= ARRAY_SIZE(adc_channel_array))
-        return;
-
-    adc_set_regular_sequence(ADC1, 1, adc_channel_array + adc);
-
-    adc_start_conversion_regular(ADC1);
-}
-
-
-bool     adcs_async_read_complete(unsigned *value)
-{
-    if (!adc_eoc(ADC1))
-        return false;
-
-    (*value) = adc_read_regular(ADC1);
-
-    adc_set_regular_sequence(ADC1, ARRAY_SIZE(adc_channel_array), adc_channel_array);
-
-    return true;
-
 }
 
 

@@ -29,6 +29,14 @@ typedef struct
     {GPIOC, GPIO5},      /* ADC 10 = Channel 15 */  \
 }
 
+#define ADCS_ADC               ADC1
+#define RCC_ADCS_ADC           RCC_ADC1
+
+#define ADCS_DMA               DMA1
+#define RCC_ADCS_DMA           RCC_DMA1
+#define ADCS_DMA_CHANNEL       DMA_CHANNEL1
+#define ADCS_DMA_CHANNEL_ISR   dma1_channel1_isr
+
 
 #define PPS_PORT_N_PINS             \
 {                                   \

@@ -11,6 +11,8 @@ extern void     adcs_get(unsigned   adc,
                          unsigned * max_value,
                          double *   av_value);
 
+extern uint16_t adcs_get_now(unsigned adc);
+
 extern unsigned adcs_get_count();
 
 extern void     adcs_start_read(unsigned adc);
