@@ -36,6 +36,7 @@ typedef struct
 #define RCC_ADCS_DMA           RCC_DMA1
 #define ADCS_DMA_CHANNEL       DMA_CHANNEL1
 #define ADCS_DMA_CHANNEL_ISR   dma1_channel1_isr
+#define ADCS_DMA_CHANNEL_IRQ   NVIC_DMA1_CHANNEL1_IRQ
 
 
 #define PPS_PORT_N_PINS             \

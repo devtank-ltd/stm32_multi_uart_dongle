@@ -4,6 +4,8 @@
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/dma.h>
+#include <libopencm3/cm3/nvic.h>
+
 
 #include "log.h"
 #include "adcs.h"
@@ -61,22 +63,29 @@ void adcs_init()
     dma_set_number_of_data(ADCS_DMA, ADCS_DMA_CHANNEL, ARRAY_SIZE(adc_values));
 
     dma_enable_transfer_complete_interrupt(ADCS_DMA, ADCS_DMA_CHANNEL);
-    dma_enable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
 
     adc_power_off(ADCS_ADC);
     adc_set_clk_source(ADCS_ADC, ADC_CLKSOURCE_ADC);
     adc_calibrate(ADCS_ADC);
     adc_set_operation_mode(ADCS_ADC, ADC_MODE_SEQUENTIAL);
     adc_set_continuous_conversion_mode(ADCS_ADC);
+    adc_disable_external_trigger_regular(ADCS_ADC);
     adc_set_right_aligned(ADCS_ADC);
     adc_set_regular_sequence(ADCS_ADC, ARRAY_SIZE(adc_channel_array), adc_channel_array);
     adc_set_sample_time_on_all_channels(ADCS_ADC, ADC_SMPTIME_071DOT5);
     adc_set_resolution(ADCS_ADC, ADC_RESOLUTION_12BIT);
     adc_power_on(ADCS_ADC);
 
+    // wait for ADC
+    for (int i = 0; i < 800000; i++)
+        asm("nop");
+
     adc_enable_dma(ADCS_ADC);
+    nvic_enable_irq(ADCS_DMA_CHANNEL_IRQ);
     adc_enable_dma_circular_mode(ADCS_ADC);
-    adc_start_conversion_regular(ADC1);
+
+    dma_enable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
+    adc_start_conversion_regular(ADCS_ADC);
 }
 
 
@@ -105,6 +114,8 @@ void adcs_do_samples()
 void ADCS_DMA_CHANNEL_ISR(void)
 {
     dma_clear_interrupt_flags(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_IFCR_CGIF1);
+    dma_enable_channel(ADCS_DMA, ADC_DMA_CHANNEL);
+    adc_start_conversion_regular(ADCS_ADC);
 }
 
 
