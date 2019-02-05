@@ -44,48 +44,50 @@ void adcs_init()
                         port_n_pins[n].pins);
     }
 
-//    rcc_periph_clock_enable(RCC_ADCS_ADC);
-    rcc_peripheral_enable_clock(&RCC_APB2ENR, RCC_APB2ENR_ADCEN);
-    rcc_periph_clock_enable(RCC_ADCS_DMA);
+    rcc_periph_clock_enable(RCC_ADC1);
+    rcc_periph_clock_enable(RCC_DMA1);
 
-    dma_disable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
+    adc_power_off(ADC1);
+    adc_set_clk_source(ADC1, ADC_CLKSOURCE_ADC);
+    adc_calibrate(ADC1);
+    adc_set_operation_mode(ADC1, ADC_MODE_SEQUENTIAL);
+    adc_set_continuous_conversion_mode(ADC1);
+    adc_set_right_aligned(ADC1);
+    adc_set_regular_sequence(ADC1, ARRAY_SIZE(adc_channel_array), adc_channel_array);
+    adc_set_sample_time_on_all_channels(ADC1, ADC_SMPTIME_071DOT5);
+    adc_set_resolution(ADC1, ADC_RESOLUTION_12BIT);
+    adc_enable_dma(ADC1);
 
-    dma_enable_circular_mode(ADCS_DMA, ADCS_DMA_CHANNEL);
-    dma_enable_memory_increment_mode(ADCS_DMA, ADCS_DMA_CHANNEL);
+    dma_disable_channel(DMA1, DMA_CHANNEL1);
 
-    dma_set_peripheral_size(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_CCR_PSIZE_16BIT);
-    dma_set_memory_size(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_CCR_MSIZE_16BIT);
+    dma_set_read_from_peripheral(DMA1, DMA_CHANNEL1);
+    dma_set_peripheral_address(DMA1, DMA_CHANNEL1, (uint32_t) &ADC_DR(ADC1));
+    dma_set_peripheral_size(DMA1, DMA_CHANNEL1, DMA_CCR_PSIZE_16BIT);
 
-    dma_set_read_from_peripheral(ADCS_DMA, ADCS_DMA_CHANNEL);
-    dma_set_peripheral_address(ADCS_DMA, ADCS_DMA_CHANNEL, (uint32_t) &ADC_DR(ADCS_ADC));
+    dma_set_memory_address(DMA1, DMA_CHANNEL1, (uint32_t) &adc_values);
+    dma_set_number_of_data(DMA1, DMA_CHANNEL1, ARRAY_SIZE(adc_values));
+    dma_enable_memory_increment_mode(DMA1, DMA_CHANNEL1);
+    dma_set_memory_size(DMA1, DMA_CHANNEL1, DMA_CCR_MSIZE_16BIT);
 
-    dma_set_memory_address(ADCS_DMA, ADCS_DMA_CHANNEL, (uint32_t) &adc_values);
-    dma_set_number_of_data(ADCS_DMA, ADCS_DMA_CHANNEL, ARRAY_SIZE(adc_values));
+    dma_enable_transfer_complete_interrupt(DMA1, DMA_CHANNEL1);
 
-    dma_enable_transfer_complete_interrupt(ADCS_DMA, ADCS_DMA_CHANNEL);
+    nvic_enable_irq(NVIC_DMA1_CHANNEL1_IRQ);
 
-    adc_power_off(ADCS_ADC);
-    adc_set_clk_source(ADCS_ADC, ADC_CLKSOURCE_ADC);
-    adc_calibrate(ADCS_ADC);
-    adc_set_operation_mode(ADCS_ADC, ADC_MODE_SEQUENTIAL);
-    adc_set_continuous_conversion_mode(ADCS_ADC);
-    adc_disable_external_trigger_regular(ADCS_ADC);
-    adc_set_right_aligned(ADCS_ADC);
-    adc_set_regular_sequence(ADCS_ADC, ARRAY_SIZE(adc_channel_array), adc_channel_array);
-    adc_set_sample_time_on_all_channels(ADCS_ADC, ADC_SMPTIME_071DOT5);
-    adc_set_resolution(ADCS_ADC, ADC_RESOLUTION_12BIT);
-    adc_power_on(ADCS_ADC);
-
+    adc_power_on(ADC1);
     // wait for ADC
     for (int i = 0; i < 800000; i++)
         asm("nop");
 
-    adc_enable_dma(ADCS_ADC);
-    nvic_enable_irq(ADCS_DMA_CHANNEL_IRQ);
-    adc_enable_dma_circular_mode(ADCS_ADC);
+    dma_enable_channel(DMA1, DMA_CHANNEL1);
+    adc_start_conversion_regular(ADC1);
+}
 
-    dma_enable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
-    adc_start_conversion_regular(ADCS_ADC);
+
+void dma1_channel1_isr(void)
+{
+    dma_clear_interrupt_flags(DMA1, DMA_CHANNEL1, DMA_IFCR_CGIF1);
+    dma_enable_channel(DMA1, DMA_CHANNEL1);
+    adc_start_conversion_regular(ADC1);
 }
 
 
@@ -108,14 +110,6 @@ void adcs_do_samples()
 
         channel_info->av_value += adc;
     }
-}
-
-
-void ADCS_DMA_CHANNEL_ISR(void)
-{
-    dma_clear_interrupt_flags(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_IFCR_CGIF1);
-    dma_enable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
-    adc_start_conversion_regular(ADCS_ADC);
 }
 
 
