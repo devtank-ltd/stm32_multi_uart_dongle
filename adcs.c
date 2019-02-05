@@ -114,7 +114,7 @@ void adcs_do_samples()
 void ADCS_DMA_CHANNEL_ISR(void)
 {
     dma_clear_interrupt_flags(ADCS_DMA, ADCS_DMA_CHANNEL, DMA_IFCR_CGIF1);
-    dma_enable_channel(ADCS_DMA, ADC_DMA_CHANNEL);
+    dma_enable_channel(ADCS_DMA, ADCS_DMA_CHANNEL);
     adc_start_conversion_regular(ADCS_ADC);
 }
 
